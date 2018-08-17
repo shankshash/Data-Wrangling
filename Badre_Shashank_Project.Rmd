@@ -1,0 +1,387 @@
+---
+title: "Exploratory data analysis on Green Taxis"
+author: "Shashank Badre"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    theme: lumen
+    toc_float: TRUE
+---
+
+# Project Contents {.tabset .tabset-fade .tabset-pills}
+
+## Summary
+
+The New York City Taxi and Limousine Commission is the agency responsible for licensing and regulating New York City's medallion (yellow) taxicabs, for-hire vehicles (community-based liveries, black cars and luxury limousines), commuter vans, and paratransit vehicles. Green Taxis (as opposed to yellow ones) are taxis that are not allowed to pick up passengers inside of the densely populated areas of Manhattan.
+
+In this report, we will perform exploratory data analysis on Green Taxis and try to understand following things:
+
+* Average distance grouped by hour of day 
+*	Median distance grouped by hour of day
+*	The average speed over the course of a trip
+*	Hypothesis test to determine if the average trip speeds are materially the same in all weeks 
+*	Relation between Tip Amount and Total Fare
+* Predict Tip Amount using simple linear regression model technique
+
+Following steps are taken to complete the study.
+
+1. Data is collected from New York City Taxi and Limousine Commission website for the month of Sep-2015 (http://www.nyc.gov/html/tlc/html/about/trip_record_data.shtml).
+
+2. Understand  the given data dictionary for the data.
+(http://www.nyc.gov/html/tlc/downloads/pdf/data_dictionary_trip_records_green.pdf)
+
+3. Data is cleaned as per the objectives of the study
+
+4. Manipulated Data to arrive at specific results
+
+5. Hypothesis Testing 
+
+6. Applied linear regression modelling technique to predict tip as a percentage of the total fare
+
+This study will allow consumers of green taxi to understand time required to travel a particular distance, average speed of the taxi at particular hour of day, expected fare amount for a particular distance and expected tip amount by the green taxi drivers.
+
+
+To analyze green taxi data, we will use following R packages:
+```{r message = FALSE}
+library(data.table)
+library(ggplot2)
+library(tidyverse)
+library(chron)
+library(dplyr)
+```
+
+* data.table package allows us to use fread function to import csv data file
+* ggplot2 package provides functions that will be used  to create interactive visualizations
+* tidyverse package helps in cleaning dataset
+* chron package allows to manipulate datetime variables
+* dplyr package incorporates functions that will be used for data manipulation
+
+## Data Preparation
+
+**Import Green Taxi Data for the month of September 2015**
+```{r message = FALSE, results='hide'}
+# Import downloaded data 
+green <- fread("https://s3.amazonaws.com/nyc-tlc/trip+data/green_tripdata_2015-09.csv")
+
+```
+
+* To understand the variables involved in this study  the codebook can be used [Review_Codebook](http://www.nyc.gov/html/tlc/downloads/pdf/data_dictionary_trip_records_green.pdf)
+* The data for the month of September for Green Taxi is imported into the green variable
+* Once the data is imported we check dimensions to know number of rows and columns in the data
+
+```{r}
+# Check dimensions
+dim_green <- dim(green)
+dim_green
+```
+
+**There are 1494926 observations and 21 variables in the imported data set**
+
+Following code will allow us to understand structure of the data and summary of the data
+```{r results='hide'}
+str(green)
+summary(green)
+```
+
+
+After summarizing imported data, it has been been found that
+
+* Variable Ehail_Fee does not have a single value in it
+* There are four missing values in Trip_type
+* There are negative values in Fare amount, Tip amount, Improvement surcharge, MTA tax and Total amount
+
+
+Now, we check for duplicate records in the data set. Using unique function we conclude that there are no duplicate records in the dataset.
+```{r}
+unique_rec <- unique(green)
+dim(unique_rec)
+```
+
+
+
+## Data Cleaning
+
+Following data cleaning steps are taken to ensure we have cleaned data set
+
+* Drop Ehail_fee as the 100% values are missing in it
+* Drop Store_and_fwd_flag and drop Trip_type columns as they are not required for the analysis
+* Fare amount charged for the trip is greater than or equal to zero
+* Extra amount charged for the trip is greater than or equal to zero
+* MTA_tax amount charged for the trip is greater than or equal to zero
+* Tip amount for the trip is greater than or equal to zero
+* Toll amount for the trip is greater than or equal to zero
+* Improvement surcharge amount charged for the trip is greater than or equal to zero
+* Total amount charged for the trip is greater than or equal to 2.5 dollar (Assume 2.5 dollar as minimum amount charged for the trip)
+
+
+```{r results='hide'}
+green_temp <- green %>% 
+             select(-c( Ehail_fee, Store_and_fwd_flag, Trip_type, VendorID)) %>%
+             filter((Fare_amount >= 0) & 
+                      (Extra >= 0) & 
+                      (MTA_tax >= 0) &
+                      (Tip_amount >= 0) & 
+                      (Tolls_amount >= 0) &  
+                      (improvement_surcharge >= 0) &
+                      (Total_amount >= 2.5))
+```
+
+
+Now, we look at dimensions and structure of our cleaned data set.
+```{r results = 'hide'}
+dim(green_temp)
+str(green_temp)
+summary(green_temp)
+```
+
+green_temp is a temporary table that will be used for our analysis. The structure of this table is given below.
+
+* Variables lpep_pickup_datetime, Lpep_dropoff_datetime are characters with datetime values as stored in the form of characters
+* Variables Pickup_longitude, Pickup_latitude, Dropoff_longitude, Dropoff_latitude, Trip_distance, Fare_amount, Extra, MTA_tax, Tip_amount, Tolls_amount,
+improvement_surcharge and Total_amount  are of numeric data type.
+* Variables such as VendorID, RateCodeID, Passenger_count and Payment_type have integer values
+
+
+**Summary of cleaned data set green_temp is given below**
+
+* Mean value of distance covered in a single trip for the Green taxis in the month of Septmeber'15 is 2.97 miles
+* Mean value of Total Amount for a single trip is 15.12 dollars
+* Mean value of Tip Amount for a single trip is 1.242
+
+
+## Trip Distance
+
+**Histogram of the number of the trip distance ("Trip Distance")**
+
+```{r}
+ggplot(green_temp, aes(x = Trip_distance))+
+  geom_histogram(binwidth = 0.3, aes(fill = ..count..)) +
+  scale_fill_gradient( name = "Frequency",
+    low = "green",
+    high = "red", labels = c("0", "40K", "80k","120k","160k")) +
+  coord_cartesian(xlim = c(0,10)) +
+  ggtitle("Histogram for Trip Distance") +
+  xlab("Trip Distance") + 
+  ylab("Frequency of Trip Distance") 
+```
+
+**Findings on Trip_distance histogram**
+
+* Frequency of Trip distance is high around 1.5 miles and then it decreases exponentially
+* Frequency of trip distance greater than 10 miles is very low as compared to frequency of trip distance upto 5 miles
+
+
+
+**Extract hour value from lpep_pickup_datetime column of green_temp table**
+```{r}
+green_temp$hour_time <- format(as.POSIXct(green_temp$lpep_pickup_datetime, 
+                                          format = "%Y-%m-%d %H:%M"), 
+                               format = "%H")
+```
+
+We have extracted the time part from the pick up data so that we get to know the
+exact hour of the day for a particular trip. (We get 24 different hours from this extraction process. 0 refers 12 midnight and then other numbers correspond to each specific hour in a day)
+
+
+**Calculate average trip distance and median trip distance by grouping hour value**
+```{r}
+mean_trip_distance <- green_temp %>% select(Trip_distance, hour_time) %>%
+                      group_by(hour_time) %>% 
+                      summarise(mean_trip_distance = mean(Trip_distance))
+head(mean_trip_distance,5)
+median_trip_distance <- green_temp %>% 
+                        select(Trip_distance, hour_time) %>%  
+                        group_by(hour_time) %>% 
+                        summarise(median_trip_distance = median(Trip_distance))
+head(median_trip_distance,5)
+```
+
+**mean_trip_distance and median_trip_distance gives mean and median trip distance of a green taxi for a specific hour of a day** 
+
+For example, mean_trip_distance at "01' hour is 3.023 miles, which suggests that on average 3.023 miles is the trip distance for the customers who travelled in between 1 am - 2 am in the month of September
+ 
+
+## Average Speed
+
+* We calculate average speed for each trip using trip distance and time required for the trip
+* Time required for the trip is calculated using pick up and drop off time values
+
+```{r}
+green_temp$trip_duration <- as.POSIXct(green_temp$Lpep_dropoff_datetime) - 
+            as.POSIXct(green_temp$lpep_pickup_datetime)
+units(green_temp$trip_duration) <- "hours"
+
+#average speed for each trip
+green_temp$avg_speed <- green_temp$Trip_distance/as.numeric(green_temp$trip_duration)
+
+green_avg_speed <- green_temp %>% filter(Trip_distance > 0 & trip_duration > 0) %>%
+                  mutate(avg_speed = Trip_distance/as.numeric(trip_duration)) %>%
+                  select(lpep_pickup_datetime, hour_time, 
+                         Trip_distance, trip_duration, avg_speed) 
+
+# fetch week_number 
+green_avg_speed$week_number <- sapply(strsplit(
+               as.character(green_avg_speed$lpep_pickup_datetime), " "),"[", 1) %>%
+                strftime(format = "%V") %>%
+                as.numeric()
+unique(green_avg_speed$week_number)
+```
+
+The above lines of code is meant to find out week number in which the trip was completed. Following points provide more details regarding the above chunk of code.
+
+* In 2015, week numbers 36, 37, 38, 39 and 40 correspond to the month of September
+* Using the pick up data for each trip , we get the week number in which the trip was done
+
+
+```{r}
+hourly_average_speed <-  green_avg_speed %>% 
+                     group_by(hour_time) %>%
+                    summarise(avg_speed_hourly = mean(avg_speed, na.rm = TRUE))
+                     
+ggplot(hourly_average_speed, aes(x = hour_time, y = avg_speed_hourly, fill = hour_time)) +
+  geom_bar(stat = "identity") +
+   labs(title =" Hourly Average Speed in September 2015", 
+         x = "Hour of the day",
+         y = "Hourly Average Speed") +
+             scale_fill_discrete(name = "Hour") +
+         coord_flip()
+```
+
+The above bar chart shows hourly average speed of the green taxi in the month of September. From the bar chart we observe following things
+
+* Average Speed for the Green Taxi is highest at 5 AM (around 30 miles per hour)
+* Average Speed for the Green Taxi is lowest at 2 PM (around 13 miles per hour)
+* In afternoon the average speed is low however it consistently increases post 6 PM
+
+```{r}
+weekly_average_speed <- green_avg_speed %>% 
+                         group_by(week_number) %>%
+                         summarise(avg_speed_weekly = mean(avg_speed, na.rm = TRUE))
+
+ggplot(weekly_average_speed, aes(x = week_number , y = avg_speed_weekly)) +
+   geom_bar( stat = "identity", aes(fill = factor(week_number))) +
+  labs(title =" Weekly Average Speed in September 2015", 
+         x = "Week Number of the Year 2015",
+         y = "Weekly Average Speed") +
+             scale_fill_discrete(name = "Week number")
+```
+
+The above bar chart shows weekly average speed of the green taxi in the month of September. From the bar chart we observe following things
+
+* Average Speed for the Green Taxis is highest in week number 40 i.e in the last week of September
+* Average Speed for the Green Taxi is lowest in week number 38
+
+    
+**The ANOVA test allows us to conclude if the difference in the weekly average speed of green taxis is statistically significant**
+```{r}
+hypo_weekly_speed <- aov(week_number ~ avg_speed_weekly, weekly_average_speed)
+summary(hypo_weekly_speed)
+```
+
+**Findings on ANOVA test are given below**
+
+* Null hypothesis for the test is that average speed is same throughout every week
+* Alternate hypothesis suggest that average speed differs in between atleast two weeks in the month of September
+* Significance level in the above test is 95%
+* P value for the test is 0.231 and hence we cannot reject the null hypothesis
+* P value suggests that we do not have sufficient statistical evidence to prove that average speed differs in between atleast two weeks in the month of September
+* Failing to reject null hypothesis mean that we can consider weekly average speed to be the same for the Green Taxis in the month of September
+
+
+## Tip and Fare amount
+
+In this section, we have studied the relation between Tip amount and Total Fare amount. 
+
+* Total Fare amount consists of Original Fare amount, Extra charges, Tolls amount, Improvement surcharge and MTA tax charged to the customer as part of the trip
+* To study the relation between tip amount and Total Fare amount, simple linear regression technique is used where response variable is tip amount and predictor variable is Total Fare amount
+* green_temp table has been used to build a regression model 
+
+```{r}
+quantile(green_temp$Fare_amount, probs = 0.99)
+quantile(green_temp$Fare_amount, probs = 0.01)
+quantile(green_temp$Tip_amount, probs = 0.99)
+quantile(green_temp$Tip_amount, probs = 0.01)
+```
+
+* Quantile function specifies for a given probability in the probability distribution of a random variable, the value at which the probability of the random variable is less than or equal to the given probability
+* In the above code, we find out outliers in the Fare_amount and Tip_amount as we want to discard them  
+* We discard values that do not fall in the region of 0.01 and 0.99 probability of Random variables which are Fare Amount and Tip Amount in this case
+
+
+
+```{r}
+green_sample  <-  green_temp[sample(1:nrow(green_temp), 160000,
+                               replace = FALSE),]
+
+tip_relation <- green_sample %>%
+                filter(Payment_type == 1 & Fare_amount >= 3 &
+                                        Fare_amount <=  50) %>%
+                select(-c(1,2,3,4,5,6,7,20)) %>%
+                mutate(total_fare = Fare_amount + Extra + Tolls_amount +
+                                    improvement_surcharge + MTA_tax) 
+```
+
+**To build a linear regression model we have taken a random sample of 160k observations from green_temp table. We will use this sample to predict the relation between tip amount and Total Fare amount**
+
+* tip_relation consists of variables that are derived from our sample 
+* tip_relation consists of observations pertaining to payment done by the customer using credit card only and not any other payment method as the tip amount is recorded only when the payment is done through credit card
+* Using the output that we recorded using quantile functions we have filtered out outliers from the sample table 
+
+**Let us look at how tip amount fluctuates based on Total fare**
+
+```{r message = FALSE}
+ggplot(tip_relation, aes(x = total_fare, y = Tip_amount)) +
+  geom_point(alpha = 0.3) +
+  geom_jitter() +
+  geom_smooth() +
+  coord_cartesian(xlim = c(0,60), ylim = c(0,15)) +
+  ggtitle("Relation between Tip amount and Total fare")+
+  xlab("Total Fare") + 
+  ylab("Tip Amount")
+```
+
+The above plot shows how values of the Tip Amount varies based on the values of Total Fare amount. From this plot the following things have been noticed.
+
+* There are certain clear lines that suggests the linear relation between tip amount and Total fare
+* It can be seen that there are certain specific patterns wherein the points lie 
+on the same tip amount irrespective of the Total Fare amount. For ex. there are clear plot of dots at Tip amount of $10, $5, $3, $2 etc and these points on the same tip amount irrespective of the Total Fare amount
+* It can be infer that there is a certian set of customers who prefer paying a specific Tip amount and this amount remains constant irrespective  of the Total Fare amount
+* There is a set of customers who seem to pay Tip amount based on the Total Fare amount
+
+
+```{r}
+linear_model <- lm(Tip_amount ~ total_fare, data = tip_relation)
+summary(linear_model)
+```
+
+**The model equation for a simple linear regression model is given below**
+
+$$ Tip Amount = 0.184 + 0.156 * Total Fare Amount $$
+
+We have found following things from the simple linear regression model to predict the Tip.
+
+* If Total Fare amount changes by one unit then the Tip Amount changes by 0.156 unit in the same direction
+* Intercept for this linear regression model is 0.184 and coefficient of predictor variable i.e. Total Fare amount is 0.156
+* Coefficient of determination for this linear equation i.e. R-square is 0.3268 and hence this linear model can explain the 32.68 % of the variance in the Tip Amount
+
+**From the linear regression model and scatter plots we conclude following things**
+
+* First set of customers prefer paying a specific tip amount irrespective 
+of the Total Fare
+* Second set of customers pay tip amount based on the total fare for the trip 
+* For second set of customers, as per linear regression model we can say that for every unit of change in total fare amount the tip amount changes by 0.156 in the same direction 
+
+
+**Limitations**
+
+* The linear model does not explain the complete variance in the tip amount. Further investigation in terms of adding more variables may help in explaning the additional variance in the tip amount
+* We can investigate first set of customers(discussed above) by applying classification and random forest techniques
+* In this study we have only considered the data for the month of September 2015. Hence seasonality effects are not taken into consideration
+
+###
+
+
+
+
+
+
